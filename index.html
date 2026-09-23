@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LaTeX in the Browser — LiveCodes POC</title>
+    <style>
+      :root {
+        --bg: #0f1115;
+        --panel: #161a22;
+        --panel-2: #1b2029;
+        --border: #2a2f3a;
+        --text: #e6e8ec;
+        --muted: #9aa4b2;
+        --accent: #7c5cff;
+        --ok: #3ecf8e;
+        --err: #ff6b6b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+
+      header {
+        display: flex;
+        align-items: baseline;
+        gap: 12px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      header h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      header .sub {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      header .badge {
+        margin-left: auto;
+        padding: 2px 8px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 12px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 18px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+
+      button {
+        padding: 7px 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel-2);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button.primary {
+        border-color: transparent;
+        background: var(--accent);
+        color: #fff;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+
+      .status {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+
+      .status.busy::before {
+        background: var(--accent);
+        animation: pulse 1s ease-in-out infinite;
+      }
+
+      .status.ok::before {
+        background: var(--ok);
+      }
+
+      .status.error::before {
+        background: var(--err);
+      }
+
+      @keyframes pulse {
+        50% {
+          opacity: 0.25;
+        }
+      }
+
+      main {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .editor {
+        min-height: 0;
+        display: flex;
+        border-right: 1px solid var(--border);
+      }
+
+      #source {
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+        padding: 16px;
+        border: 0;
+        outline: none;
+        resize: none;
+        background: var(--panel);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        tab-size: 2;
+      }
+
+      .preview {
+        position: relative;
+        min-height: 0;
+        padding: 24px;
+        background: var(--bg);
+      }
+
+      #document {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 4px;
+        background: #fff;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      }
+
+      .error {
+        position: absolute;
+        inset: 24px;
+        overflow: auto;
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 107, 107, 0.5);
+        border-radius: 8px;
+        background: #1a1113;
+        color: #ffc9c9;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 800px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr 1fr;
+        }
+
+        .editor {
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>LaTeX in the Browser</h1>
+      <span class="sub">proof of concept — compiled to HTML on the client, no server</span>
+      <span class="badge">latex.js@0.12.6</span>
+    </header>
+
+    <div class="toolbar">
+      <button id="run" class="primary">Run</button>
+      <button id="open">Open in new tab</button>
+      <button id="download">Download HTML</button>
+      <span id="status" class="status">Loading compiler…</span>
+    </div>
+
+    <main>
+      <section class="editor">
+        <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+      </section>
+      <section class="preview">
+        <div id="error" class="error" hidden></div>
+        <iframe id="document" title="Typeset document"></iframe>
+      </section>
+    </main>
+
+    <script type="module">
+      // POC: translate LaTeX to HTML/DOM in the browser with LaTeX.js — a pure-JavaScript
+      // LaTeX implementation. There is no backend and no build step; the library is a single
+      // ES module fetched from a CDN and the whole demo is this file.
+      import { parse, HtmlGenerator } from "https://cdn.jsdelivr.net/npm/latex.js@0.12.6/dist/latex.mjs";
+
+      const VERSION = "0.12.6";
+      const BASE = `https://cdn.jsdelivr.net/npm/latex.js@${VERSION}/dist/`;
+
+      const DEFAULT_SOURCE = `\\documentclass{article}
+
+\\title{LaTeX in the Browser}
+\\author{Proof of concept \\\\ for LiveCodes}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+\\begin{abstract}
+This document was typeset from LaTeX source \\emph{entirely in your browser} --- no server,
+no install, no upload. The source on the left is translated to HTML and CSS by
+\\textbf{LaTeX.js}, a JavaScript implementation of a LaTeX compiler.
+\\end{abstract}
+
+\\section{Mathematics}
+Inline math such as $E = mc^2$ or $a^2 + b^2 = c^2$ flows with the text. A displayed
+equation gets a line of its own:
+
+$$
+  \\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}
+  \\qquad\\text{and}\\qquad
+  \\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}
+$$
+
+\\section{Structure}
+\\subsection{Lists}
+\\begin{itemize}
+  \\item No backend --- the compiler runs in the tab
+  \\item No build step --- a single HTML file
+  \\item MIT licensed, loaded from a CDN
+\\end{itemize}
+
+\\begin{enumerate}
+  \\item Write some LaTeX
+  \\item Press \\textbf{Run} (or \\texttt{Ctrl+Enter})
+  \\item Read the typeset output
+\\end{enumerate}
+
+\\subsection{A description list}
+\\begin{description}
+  \\item[Client-side] nothing is uploaded; the compiler runs in the tab
+  \\item[No build step] the whole demo is a single HTML file
+  \\item[Open source] MIT licensed, loaded from a CDN
+\\end{description}
+
+\\section{Conclusion}
+LaTeX.js covers a useful subset of LaTeX --- sections, lists, mathematics and more ---
+which is enough to make a credible LaTeX language for LiveCodes.
+\\end{document}
+`;
+
+      const source = document.getElementById("source");
+      const frame = document.getElementById("document");
+      const errorBox = document.getElementById("error");
+      const statusEl = document.getElementById("status");
+      const runButton = document.getElementById("run");
+      const openButton = document.getElementById("open");
+      const downloadButton = document.getElementById("download");
+
+      source.value = DEFAULT_SOURCE;
+
+      let latest = 0;
+      let currentHtml = "";
+
+      const setStatus = (text, state = "") => {
+        statusEl.textContent = text;
+        statusEl.className = `status ${state}`.trim();
+        document.documentElement.dataset.status = state || "idle";
+      };
+
+      const showError = (err) => {
+        errorBox.textContent = formatError(err);
+        errorBox.hidden = false;
+        frame.hidden = true;
+      };
+
+      const clearError = () => {
+        errorBox.hidden = true;
+        errorBox.textContent = "";
+        frame.hidden = false;
+      };
+
+      const formatError = (err) => {
+        if (!err) return "Unknown error";
+        const { message, location } = err;
+        if (location && location.start) {
+          const { line, column } = location.start;
+          const lineText = message ? `\n${message}` : "";
+          return `Parse error at line ${line}, column ${column}${lineText}`;
+        }
+        return err.message || String(err);
+      };
+
+      const render = () => {
+        const id = ++latest;
+        const started = performance.now();
+        try {
+          const generator = new HtmlGenerator({ hyphenate: true });
+          const doc = parse(source.value, { generator }).htmlDocument(BASE);
+          const html = `<!DOCTYPE html>\n${doc.documentElement.outerHTML}`;
+          if (id !== latest) return;
+
+          currentHtml = html;
+          frame.srcdoc = html;
+          clearError();
+
+          const elapsed = Math.round(performance.now() - started);
+          setStatus(`Rendered in ${elapsed} ms`, "ok");
+          document.documentElement.dataset.ms = String(elapsed);
+          document.documentElement.dataset.runs = String(latest);
+        } catch (err) {
+          if (id !== latest) return;
+          showError(err);
+          setStatus("Compilation failed", "error");
+        }
+      };
+
+      const download = () => {
+        if (!currentHtml) return;
+        const blob = new Blob([currentHtml], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "document.html";
+        link.click();
+        URL.revokeObjectURL(url);
+      };
+
+      const openInNewTab = () => {
+        if (!currentHtml) return;
+        const blob = new Blob([currentHtml], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      };
+
+      let debounce;
+      source.addEventListener("input", () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(render, 400);
+      });
+
+      source.addEventListener("keydown", (event) => {
+        if (event.key === "Tab") {
+          event.preventDefault();
+          const { selectionStart: start, selectionEnd: end, value } = source;
+          source.value = `${value.slice(0, start)}  ${value.slice(end)}`;
+          source.selectionStart = source.selectionEnd = start + 2;
+        }
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          render();
+        }
+      });
+
+      runButton.addEventListener("click", render);
+      openButton.addEventListener("click", openInNewTab);
+      downloadButton.addEventListener("click", download);
+
+      setStatus("Ready", "ok");
+      render();
+    </script>
+  </body>
+</html>
